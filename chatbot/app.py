@@ -22,6 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 ENV_PATH = BASE_DIR / ".env"
 
+# Ensure local module directory is in sys.path for uvicorn reloads
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -110,7 +111,19 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class ResetRequest(BaseModel):
+    conversation_id: str
+
+
 app = FastAPI(title="Sage - Study Buddy Chatbot")
+
+
+@app.post("/reset")
+async def reset_chat(request: ResetRequest):
+    conv_id = request.conversation_id.strip() if request.conversation_id else ""
+    if conv_id and conv_id in conversations:
+        conversations[conv_id] = []
+    return {"status": "ok", "message": "Context window reset successfully."}
 
 
 @app.post("/chat")
@@ -258,3 +271,28 @@ async def chat(request: ChatRequest):
             status_code=502,
             content={"error": "Something went wrong talking to the AI. Please try again."}
         )
+
+
+# Serve static files and frontend
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/")
+async def get_index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+if __name__ == "__main__":
+    import socket
+    import uvicorn
+
+    def is_port_in_use(port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(("127.0.0.1", port)) == 0
+
+    configured_port = int(os.getenv("PORT", "8000"))
+    if is_port_in_use(configured_port) and not os.getenv("PORT"):
+        configured_port = 8001 if not is_port_in_use(8001) else 8080
+        logger.info("Port 8000 is occupied, auto-selected port %d", configured_port)
+
+    uvicorn.run("app:app", host="127.0.0.1", port=configured_port, reload=True)
