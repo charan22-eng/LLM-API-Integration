@@ -16,6 +16,9 @@
       --user-text: #ffffff;
       --bot-bubble: #ffffff;
       --bot-text: #1e293b;
+      --error-bg: #fef2f2;
+      --error-border: #fca5a5;
+      --error-text: #991b1b;
       --text-muted: #64748b;
       --accent: #2563eb;
       --accent-hover: #1d4ed8;
@@ -127,7 +130,8 @@
       justify-content: flex-end;
     }
 
-    .message-row.bot {
+    .message-row.bot,
+    .message-row.error {
       justify-content: flex-start;
     }
 
@@ -153,6 +157,55 @@
       color: var(--bot-text);
       border: 1px solid var(--border-color);
       border-bottom-left-radius: 4px;
+    }
+
+    /* Error Bubble: Visibly styled red-tinted bubble */
+    .bubble.error-bubble {
+      background-color: var(--error-bg);
+      border: 1px solid var(--error-border);
+      color: var(--error-text);
+      border-bottom-left-radius: 4px;
+      font-weight: 500;
+    }
+
+    .bubble.error-bubble strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Thinking Indicator */
+    .thinking-bubble {
+      background-color: var(--bot-bubble);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-style: italic;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dots-container {
+      display: inline-flex;
+      gap: 4px;
+    }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      background-color: var(--text-muted);
+      border-radius: 50%;
+      animation: pulse 1.4s infinite ease-in-out both;
+    }
+
+    .dot:nth-child(1) { animation-delay: -0.32s; }
+    .dot:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes pulse {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+      40% { transform: scale(1); opacity: 1; }
     }
 
     /* Input Area */
@@ -185,6 +238,18 @@
       background-color: #ffffff;
       color: var(--bot-text);
       outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .chat-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    .chat-input:disabled {
+      background-color: #f1f5f9;
+      color: #94a3b8;
+      cursor: not-allowed;
     }
 
     .send-button {
@@ -197,6 +262,26 @@
       font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+      flex-shrink: 0;
+    }
+
+    .send-button:hover:not(:disabled) {
+      background-color: var(--accent-hover);
+    }
+
+    .send-button:disabled {
+      background-color: #cbd5e1;
+      cursor: not-allowed;
+    }
+
+    .input-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      padding-left: 4px;
     }
   </style>
 </head>
@@ -212,17 +297,101 @@
         </div>
       </div>
     </header>
+
     <main class="messages-area" id="messagesArea">
       <div class="message-row bot">
         <div class="bubble bot-bubble">Hi there! I'm Sage, your study-buddy tutor. What topic or concept are we exploring today?</div>
       </div>
     </main>
+
     <footer class="chat-input-area">
       <div class="input-wrapper">
         <textarea id="messageInput" class="chat-input" placeholder="Ask Sage a study question..." rows="1"></textarea>
         <button id="sendBtn" class="send-button" type="button">Send</button>
       </div>
+      <div class="input-hint">Press <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for a new line</div>
     </footer>
   </div>
+
+  <script>
+    let conversationId = crypto.randomUUID();
+
+    const messagesArea = document.getElementById("messagesArea");
+    const messageInput = document.getElementById("messageInput");
+    const sendBtn = document.getElementById("sendBtn");
+
+    let isThinking = false;
+    let thinkingElement = null;
+
+    function scrollToBottom() {
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    // Safely append a message bubble using textContent to prevent HTML injection
+    function appendMessage(text, type) {
+      const row = document.createElement("div");
+      row.className = `message-row ${type}`;
+      const bubble = document.createElement("div");
+      bubble.className = `bubble ${type}-bubble`;
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      messagesArea.appendChild(row);
+      scrollToBottom();
+      return row;
+    }
+
+    function appendErrorMessage(errorText) {
+      const row = document.createElement("div");
+      row.className = "message-row error";
+      const bubble = document.createElement("div");
+      bubble.className = "bubble error-bubble";
+      const label = document.createElement("strong");
+      label.textContent = "Error";
+      bubble.appendChild(label);
+      const messageSpan = document.createElement("span");
+      messageSpan.textContent = errorText;
+      bubble.appendChild(messageSpan);
+      row.appendChild(bubble);
+      messagesArea.appendChild(row);
+      scrollToBottom();
+    }
+
+    function showThinkingIndicator() {
+      if (thinkingElement) return;
+      const row = document.createElement("div");
+      row.className = "message-row bot";
+      const bubble = document.createElement("div");
+      bubble.className = "bubble thinking-bubble";
+      const textSpan = document.createElement("span");
+      textSpan.textContent = "Sage is thinking...";
+      bubble.appendChild(textSpan);
+      const dotsContainer = document.createElement("div");
+      dotsContainer.className = "dots-container";
+      for (let i = 0; i < 3; i++) {
+        const dot = document.createElement("div");
+        dot.className = "dot";
+        dotsContainer.appendChild(dot);
+      }
+      bubble.appendChild(dotsContainer);
+      row.appendChild(bubble);
+      messagesArea.appendChild(row);
+      thinkingElement = row;
+      scrollToBottom();
+    }
+
+    function hideThinkingIndicator() {
+      if (thinkingElement) {
+        thinkingElement.remove();
+        thinkingElement = null;
+      }
+    }
+
+    function setInputState(disabled) {
+      isThinking = disabled;
+      messageInput.disabled = disabled;
+      sendBtn.disabled = disabled;
+      if (!disabled) messageInput.focus();
+    }
+  </script>
 </body>
 </html>
