@@ -52,4 +52,55 @@ SYSTEM_PROMPT = (
     "politely redirect them back to their studies."
 )
 
+MAX_MESSAGES = 10
+MAX_STORED_HISTORY = 100
+MAX_CONTEXT_CHARS = 16000
+
+# In-memory conversation store: conversation_id -> list[{"role": "user" | "model", "text": str}]
+conversations: dict[str, list[dict]] = {}
+
+
+def get_context_window(history: list[dict]) -> list[dict]:
+    """Retrieves a normalized, safely truncated context window.
+
+    Rules enforced:
+    1. Truncates to the most recent MAX_MESSAGES entries.
+    2. Ensures the window starts with a 'user' turn (drops leading 'model' messages).
+    3. Normalizes turns so roles strictly alternate ('user' -> 'model' -> 'user' ...),
+       merging consecutive same-role messages with newlines to fulfill Gemini API constraints.
+    4. Guards against token budget overflow by capping total context characters.
+    """
+    if not history:
+        return []
+
+    # 1. Truncate to the most recent MAX_MESSAGES
+    window = list(history[-MAX_MESSAGES:])
+
+    # 2. Drop any leading model messages so window always begins with a user turn
+    while window and window[0].get("role") == "model":
+        window = window[1:]
+
+    if not window:
+        return []
+
+    # 3. Normalize turn alternation: merge consecutive same-role messages
+    normalized: list[dict] = []
+    for msg in window:
+        role = msg.get("role", "user")
+        text = msg.get("text", "")
+        if normalized and normalized[-1]["role"] == role:
+            normalized[-1]["text"] = f"{normalized[-1]['text']}\n\n{text}"
+        else:
+            normalized.append({"role": role, "text": text})
+
+    # Ensure leading message remains user
+    while normalized and normalized[0]["role"] == "model":
+        normalized = normalized[1:]
+
+    # 4. Token/Character budget guard: if total length exceeds limit, prune oldest pairs
+    while len(normalized) > 2 and sum(len(m["text"]) for m in normalized) > MAX_CONTEXT_CHARS:
+        normalized = normalized[2:]
+
+    return normalized
+
 app = FastAPI(title="Sage - Study Buddy Chatbot")
