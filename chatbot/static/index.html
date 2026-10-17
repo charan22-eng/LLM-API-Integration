@@ -110,6 +110,55 @@
       display: inline-block;
     }
 
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .context-badge {
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #cbd5e1;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+
+    .context-badge.full {
+      background: rgba(59, 130, 246, 0.3);
+      border-color: rgba(96, 165, 250, 0.5);
+      color: #93c5fd;
+    }
+
+    .new-chat-btn {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #ffffff;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+      white-space: nowrap;
+    }
+
+    .new-chat-btn:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .new-chat-btn:active {
+      transform: scale(0.97);
+    }
+
     /* Message Area */
     .messages-area {
       flex: 1;
@@ -273,9 +322,14 @@
       background-color: var(--accent-hover);
     }
 
+    .send-button:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
     .send-button:disabled {
       background-color: #cbd5e1;
       cursor: not-allowed;
+      transform: none;
     }
 
     .input-hint {
@@ -283,10 +337,25 @@
       color: var(--text-muted);
       padding-left: 4px;
     }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 0;
+      }
+      .chat-container {
+        height: 100vh;
+        border-radius: 0;
+        border: none;
+      }
+      .bubble {
+        max-width: 88%;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="chat-container">
+    <!-- Header -->
     <header class="chat-header">
       <div class="avatar">S</div>
       <div class="header-info">
@@ -296,17 +365,29 @@
           <span>Study-Buddy Tutor</span>
         </div>
       </div>
+      <div class="header-actions">
+        <span id="contextBadge" class="context-badge">Context: 0 / 10 msgs</span>
+        <button id="newChatBtn" class="new-chat-btn" type="button" title="Start a fresh conversation and reset context window">New Chat</button>
+      </div>
     </header>
 
+    <!-- Messages Area -->
     <main class="messages-area" id="messagesArea">
+      <!-- Initial Sage Greeting -->
       <div class="message-row bot">
         <div class="bubble bot-bubble">Hi there! I'm Sage, your study-buddy tutor. What topic or concept are we exploring today?</div>
       </div>
     </main>
 
+    <!-- Input Form -->
     <footer class="chat-input-area">
       <div class="input-wrapper">
-        <textarea id="messageInput" class="chat-input" placeholder="Ask Sage a study question..." rows="1"></textarea>
+        <textarea
+          id="messageInput"
+          class="chat-input"
+          placeholder="Ask Sage a study question..."
+          rows="1"
+        ></textarea>
         <button id="sendBtn" class="send-button" type="button">Send</button>
       </div>
       <div class="input-hint">Press <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for a new line</div>
@@ -314,56 +395,88 @@
   </div>
 
   <script>
+    // Generate unique conversation_id once on page load (can be reset via New Chat)
     let conversationId = crypto.randomUUID();
 
     const messagesArea = document.getElementById("messagesArea");
     const messageInput = document.getElementById("messageInput");
     const sendBtn = document.getElementById("sendBtn");
+    const contextBadge = document.getElementById("contextBadge");
+    const newChatBtn = document.getElementById("newChatBtn");
 
     let isThinking = false;
     let thinkingElement = null;
 
+    // Update the visual context window badge
+    function updateContextBadge(count) {
+      if (!contextBadge) return;
+      if (count <= 0) {
+        contextBadge.textContent = "Context: 0 / 10 msgs";
+        contextBadge.classList.remove("full");
+      } else if (count >= 10) {
+        contextBadge.textContent = "Context: 10 / 10 (Sliding Window)";
+        contextBadge.classList.add("full");
+      } else {
+        contextBadge.textContent = `Context: ${count} / 10 msgs`;
+        contextBadge.classList.remove("full");
+      }
+    }
+
+    // Scroll to the latest message
     function scrollToBottom() {
       messagesArea.scrollTop = messagesArea.scrollHeight;
     }
 
+    // Safely append a message bubble using textContent (preventing any HTML injection)
     function appendMessage(text, type) {
       const row = document.createElement("div");
       row.className = `message-row ${type}`;
+
       const bubble = document.createElement("div");
       bubble.className = `bubble ${type}-bubble`;
       bubble.textContent = text;
+
       row.appendChild(bubble);
       messagesArea.appendChild(row);
       scrollToBottom();
       return row;
     }
 
+    // Safely append an error bubble
     function appendErrorMessage(errorText) {
       const row = document.createElement("div");
       row.className = "message-row error";
+
       const bubble = document.createElement("div");
       bubble.className = "bubble error-bubble";
+
       const label = document.createElement("strong");
       label.textContent = "Error";
       bubble.appendChild(label);
+
       const messageSpan = document.createElement("span");
       messageSpan.textContent = errorText;
       bubble.appendChild(messageSpan);
+
       row.appendChild(bubble);
       messagesArea.appendChild(row);
       scrollToBottom();
     }
 
+    // Display "Sage is thinking..." indicator
     function showThinkingIndicator() {
       if (thinkingElement) return;
+
       const row = document.createElement("div");
       row.className = "message-row bot";
+
       const bubble = document.createElement("div");
       bubble.className = "bubble thinking-bubble";
+
       const textSpan = document.createElement("span");
       textSpan.textContent = "Sage is thinking...";
       bubble.appendChild(textSpan);
+
       const dotsContainer = document.createElement("div");
       dotsContainer.className = "dots-container";
       for (let i = 0; i < 3; i++) {
@@ -372,12 +485,14 @@
         dotsContainer.appendChild(dot);
       }
       bubble.appendChild(dotsContainer);
+
       row.appendChild(bubble);
       messagesArea.appendChild(row);
       thinkingElement = row;
       scrollToBottom();
     }
 
+    // Remove thinking indicator
     function hideThinkingIndicator() {
       if (thinkingElement) {
         thinkingElement.remove();
@@ -385,28 +500,38 @@
       }
     }
 
+    // Set UI busy state
     function setInputState(disabled) {
       isThinking = disabled;
       messageInput.disabled = disabled;
       sendBtn.disabled = disabled;
-      if (!disabled) messageInput.focus();
+      if (!disabled) {
+        messageInput.focus();
+      }
     }
 
+    // Send chat message
     async function sendMessage() {
       const text = messageInput.value.trim();
       if (!text || isThinking) return;
 
+      // Show user message immediately
       appendMessage(text, "user");
+
+      // Clear input and reset height
       messageInput.value = "";
       messageInput.style.height = "auto";
 
+      // Disable input and button, show thinking indicator
       setInputState(true);
       showThinkingIndicator();
 
       try {
         const response = await fetch("/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json"
+          },
           body: JSON.stringify({
             conversation_id: conversationId,
             message: text
@@ -416,24 +541,64 @@
         hideThinkingIndicator();
 
         let data = null;
-        try { data = await response.json(); } catch (err) {}
+        try {
+          data = await response.json();
+        } catch (parseErr) {
+          // Response body was not JSON
+        }
 
         if (response.ok && data && typeof data.reply === "string") {
           appendMessage(data.reply, "bot");
+          if (typeof data.context_count === "number") {
+            updateContextBadge(data.context_count);
+          }
         } else {
+          // Server returned an error status
           const errorMsg = (data && data.error)
             ? data.error
             : `Server returned error (${response.status}). Please try again.`;
           appendErrorMessage(errorMsg);
         }
       } catch (networkErr) {
+        // Network failure, offline, or request blocked
         hideThinkingIndicator();
         appendErrorMessage("Network error: Could not reach the server. Please check your connection and try again.");
       } finally {
+        // Always re-enable input so user can continue chatting
         setInputState(false);
       }
     }
 
+    // New Chat handler: resets server context and starts a fresh conversation
+    newChatBtn.addEventListener("click", async () => {
+      try {
+        await fetch("/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: conversationId })
+        });
+      } catch (err) {
+        // Ignore reset failures
+      }
+
+      conversationId = crypto.randomUUID();
+      messagesArea.innerHTML = "";
+
+      const row = document.createElement("div");
+      row.className = "message-row bot";
+      const bubble = document.createElement("div");
+      bubble.className = "bubble bot-bubble";
+      bubble.textContent = "Hi there! I'm Sage, your study-buddy tutor. What topic or concept are we exploring today?";
+      row.appendChild(bubble);
+      messagesArea.appendChild(row);
+
+      updateContextBadge(0);
+      messageInput.value = "";
+      messageInput.style.height = "auto";
+      messageInput.focus();
+    });
+
+    // Keyboard handling: Enter sends; Shift+Enter creates a newline
     messageInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -445,11 +610,13 @@
       sendMessage();
     });
 
+    // Auto-grow textarea height slightly for multiline readability
     messageInput.addEventListener("input", () => {
       messageInput.style.height = "auto";
       messageInput.style.height = Math.min(messageInput.scrollHeight, 140) + "px";
     });
 
+    // Initial focus on message input
     messageInput.focus();
   </script>
 </body>
