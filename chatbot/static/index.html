@@ -327,7 +327,6 @@
       messagesArea.scrollTop = messagesArea.scrollHeight;
     }
 
-    // Safely append a message bubble using textContent to prevent HTML injection
     function appendMessage(text, type) {
       const row = document.createElement("div");
       row.className = `message-row ${type}`;
@@ -392,6 +391,66 @@
       sendBtn.disabled = disabled;
       if (!disabled) messageInput.focus();
     }
+
+    async function sendMessage() {
+      const text = messageInput.value.trim();
+      if (!text || isThinking) return;
+
+      appendMessage(text, "user");
+      messageInput.value = "";
+      messageInput.style.height = "auto";
+
+      setInputState(true);
+      showThinkingIndicator();
+
+      try {
+        const response = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            message: text
+          })
+        });
+
+        hideThinkingIndicator();
+
+        let data = null;
+        try { data = await response.json(); } catch (err) {}
+
+        if (response.ok && data && typeof data.reply === "string") {
+          appendMessage(data.reply, "bot");
+        } else {
+          const errorMsg = (data && data.error)
+            ? data.error
+            : `Server returned error (${response.status}). Please try again.`;
+          appendErrorMessage(errorMsg);
+        }
+      } catch (networkErr) {
+        hideThinkingIndicator();
+        appendErrorMessage("Network error: Could not reach the server. Please check your connection and try again.");
+      } finally {
+        setInputState(false);
+      }
+    }
+
+    messageInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    sendBtn.addEventListener("click", () => {
+      sendMessage();
+    });
+
+    messageInput.addEventListener("input", () => {
+      messageInput.style.height = "auto";
+      messageInput.style.height = Math.min(messageInput.scrollHeight, 140) + "px";
+    });
+
+    messageInput.focus();
   </script>
 </body>
 </html>
